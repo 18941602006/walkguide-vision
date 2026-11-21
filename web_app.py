@@ -19,6 +19,7 @@ from live_overlay import (
     indoor_input, indoor_regions, render_regions,
 )
 from outdoor_channel import channel_input, render_channel
+from walking_guidance import render_guidance
 from walkscapes import COLORS, PROJECT, SIZE, overlay, predict_mask
 
 
@@ -71,7 +72,7 @@ PAGE = """<!doctype html>
       <figure><figcaption>原画面</figcaption><video id="live-source" playsinline muted></video></figure>
       <figure><figcaption>实时分割</figcaption><canvas id="live-overlay" aria-label="实时分割画面"></canvas></figure>
     </div>
-    <p>绿色为与近处路面相连的候选通道，橙色为障碍，蓝色为室内楼梯或台阶。实际通行需结合交通、距离与地面高差判断。</p>
+    <p>白色箭线为画面内步行方向参考，绿色为候选通道，橙色为障碍，蓝色为室内台阶。实际通行需结合交通、距离与地面高差判断。</p>
   </section>
   <form id="photo-form" method="post" enctype="multipart/form-data">
     <input name="photo" type="file" accept="image/jpeg,image/png,image/webp" aria-label="选择照片" required>
@@ -214,11 +215,12 @@ def create_app() -> Flask:
         if indoor:
             frame, clipped = indoor_input(image, enhance)
             labels, confidence = predict_mask(frame, indoor_model, device, with_confidence=True)
-            return render_regions(image, *indoor_regions(labels, confidence, clipped))
+            regions = indoor_regions(labels, confidence, clipped)
+            return render_guidance(render_regions(image, *regions), regions[0])
         labels, confidence = predict_mask(
             channel_input(image), outdoor_model, device, with_confidence=True,
         )
-        return render_channel(image, labels, confidence)
+        return render_channel(image, labels, confidence, with_guidance=True)
 
     if device.type == "cuda":
         for size in ((960, 540), (540, 960)):
@@ -244,7 +246,7 @@ def create_app() -> Flask:
         if not inference_slot.acquire(blocking=False):
             return Response(status=429)
         try:
-            segmented = worker.submit(
+            segmented, hint = worker.submit(
                 live_result, image, indoor, request.args.get("enhance") == "1",
             ).result()
         finally:
@@ -257,7 +259,8 @@ def create_app() -> Flask:
                                "indoor" if indoor else "outdoor", image.width, image.height)
         return Response(result.getvalue(), mimetype="image/jpeg",
                         headers={"Cache-Control": "no-store", "X-WalkScapes-Device": device.type,
-                                 "X-WalkScapes-Server-Ms": f"{server_ms:.0f}"})
+                                 "X-WalkScapes-Server-Ms": f"{server_ms:.0f}",
+                                 "X-WalkScapes-Direction": hint})
 
     @app.errorhandler(413)
     def too_large(_error):
@@ -285,7 +288,7 @@ def create_app() -> Flask:
 
             def render_video_frame(image):
                 with inference_slot:
-                    return worker.submit(live_result, image, indoor, False).result()
+                    return worker.submit(live_result, image, indoor, False).result()[0]
 
             try:
                 segment_video(source, destination, infer, render_frame=render_video_frame)

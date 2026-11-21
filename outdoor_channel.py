@@ -5,6 +5,7 @@ import numpy as np
 from PIL import Image
 
 from live_overlay import render_regions
+from walking_guidance import render_guidance
 
 
 # Cityscapes IDs differ from the original WalkScapes model.
@@ -46,10 +47,12 @@ def channel_regions(labels: np.ndarray, confidence: np.ndarray):
     return np.isin(components, keep), obstacles
 
 
-def render_channel(image: Image.Image, labels: np.ndarray, confidence: np.ndarray):
+def render_channel(image: Image.Image, labels: np.ndarray, confidence: np.ndarray,
+                   with_guidance=False):
     ground, obstacles = channel_regions(labels, confidence)
     ground = trim_channel(image, ground)
-    return render_regions(image, ground, obstacles)
+    result, hint = render_guidance(render_regions(image, ground, obstacles), ground)
+    return (result, hint) if with_guidance else result
 
 
 def trim_channel(image: Image.Image, ground: np.ndarray) -> np.ndarray:

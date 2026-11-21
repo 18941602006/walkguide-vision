@@ -101,7 +101,9 @@ async function analyzeFrame(run) {
         const device = response.headers.get('X-WalkScapes-Device') === 'cuda' ? 'GPU' : 'CPU';
         if (!source.ended) {
           const server = response.headers.get('X-WalkScapes-Server-Ms');
-          liveStatus.textContent = `${device} · 分割 ${fps} FPS · 单帧往返 ${Math.round(now - started)} ms · 服务端 ${server} ms`;
+          const hints = {straight: '沿线向前', left: '向左调整', right: '向右调整', stop: '暂停确认：通道不足或不确定'};
+          const hint = hints[response.headers.get('X-WalkScapes-Direction')] || '等待方向判断';
+          liveStatus.textContent = `${hint} · ${device} · 分割 ${fps} FPS · 单帧往返 ${Math.round(now - started)} ms · 服务端 ${server} ms`;
         }
         run.frames = 0;
         run.lastUpdate = now;
